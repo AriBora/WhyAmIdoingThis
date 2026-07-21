@@ -9,12 +9,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+backend/__pycache__
+backend/.venv
+
 frontend/node_modules
 frontend/dist
 frontend/dist-ssr
 frontend/.output
 frontend/.vinxi
-frontend/.tanstack/**
+frontend/.tanstack
 frontend/.nitro
 frontend/*.local
 

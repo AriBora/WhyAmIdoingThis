@@ -7,53 +7,20 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- provides gen_random_uuid()
 
 -- -----------------------------------------------------------------------------
--- applications: one row per tracked client app (a "site" in tracker.js terms)
+-- applications: one row per tracked client app ("site" in tracker.js terms)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS applications (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    site_id          TEXT NOT NULL UNIQUE,   -- matches data-site-id attribute in tracker.js
-    name             TEXT NOT NULL,
-    description      TEXT,
-
-    -- Mirrors DashboardState in dashboard-store.ts (theme, accentHue, tiles, layout).
-    -- Currently that state lives in the browser's localStorage; this column lets you
-    -- move it server-side later without a schema change — just start reading/writing
-    -- this JSON instead of localStorage.
-    dashboard_config JSONB NOT NULL DEFAULT '{
-        "theme": "light",
-        "accentHue": 265,
-        "tiles": [
-            {"id": "kpi-sessions",   "kind": "kpi-sessions",   "title": "Sessions · last 7d"},
-            {"id": "kpi-active",     "kind": "kpi-active",     "title": "Active users now"},
-            {"id": "kpi-completion","kind": "kpi-completion", "title": "Loan completion"},
-            {"id": "kpi-dropoff",    "kind": "kpi-dropoff",    "title": "Biggest drop-off"},
-            {"id": "chart-funnel",  "kind": "chart-funnel",   "title": "Loan application funnel"},
-            {"id": "chart-daily",   "kind": "chart-daily",    "title": "Daily sessions"},
-            {"id": "chart-errors",  "kind": "chart-errors",   "title": "Top form-error fields"},
-            {"id": "chat",          "kind": "chat",           "title": "Ask the analyst"}
-        ],
-        "layout": [
-            {"i": "kpi-sessions",   "x": 0, "y": 0,  "w": 2, "h": 3},
-            {"i": "kpi-active",     "x": 2, "y": 0,  "w": 2, "h": 3},
-            {"i": "kpi-completion", "x": 4, "y": 0,  "w": 2, "h": 3},
-            {"i": "kpi-dropoff",    "x": 6, "y": 0,  "w": 2, "h": 3},
-            {"i": "chart-funnel",   "x": 0, "y": 3,  "w": 4, "h": 7},
-            {"i": "chart-daily",    "x": 4, "y": 3,  "w": 4, "h": 7},
-            {"i": "chart-errors",   "x": 0, "y": 10, "w": 8, "h": 7},
-            {"i": "chat",           "x": 8, "y": 0,  "w": 4, "h": 17}
-        ]
-    }'::jsonb,
-
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    site_id     TEXT        NOT NULL UNIQUE,  -- matches data-site-id in tracker.js
+    name        TEXT        NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- keep updated_at fresh whenever a row changes (e.g. dashboard layout saved)
+-- keep updated_at current on any row change
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
+BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_applications_updated_at ON applications;
@@ -62,43 +29,73 @@ CREATE TRIGGER trg_applications_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- -----------------------------------------------------------------------------
+-- dashboard_tiles: one row per tile, FK'd to applications
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dashboard_tiles (
+    id             TEXT        NOT NULL,
+    application_id UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    PRIMARY KEY (id, application_id),
+
+    kind           TEXT        NOT NULL DEFAULT 'custom',
+                                        -- built-in: 'kpi-sessions' | 'kpi-active' | 'kpi-completion'
+                                        --           | 'kpi-dropoff' | 'chart-funnel' | 'chart-daily'
+                                        --           | 'chart-errors' | 'chat'
+                                        -- custom:   'custom'
+    title          TEXT        NOT NULL,
+
+    -- react-grid-layout position/size
+    x              INT         NOT NULL DEFAULT 0,
+    y              INT         NOT NULL DEFAULT 0,
+    w              INT         NOT NULL DEFAULT 4,
+    h              INT         NOT NULL DEFAULT 4,
+
+    -- visualization config (NULL for KPI / chat tiles)
+    chart_type     TEXT,                 -- 'bar' | 'line' | 'funnel'
+    sql_query      TEXT,                 -- SELECT that drives the chart
+    x_key          TEXT,                 -- column mapped to x-axis / category
+    y_key          TEXT,                 -- column mapped to y-axis / value
+
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tiles_app ON dashboard_tiles (application_id);
+
+DROP TRIGGER IF EXISTS trg_tiles_updated_at ON dashboard_tiles;
+CREATE TRIGGER trg_tiles_updated_at
+    BEFORE UPDATE ON dashboard_tiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- -----------------------------------------------------------------------------
 -- events: generic behavioral events, one row per event, FK'd to applications
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS events (
-    id              BIGSERIAL PRIMARY KEY,
-    application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,              -- 'page_view', 'flow_step', 'form_error', ...
-    properties      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    id              BIGSERIAL   PRIMARY KEY,
+    application_id  UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    name            TEXT        NOT NULL,   -- 'screen_view' | 'flow_step' | 'form_error' | ...
+    properties      JSONB       NOT NULL DEFAULT '{}'::jsonb,
     url             TEXT,
-    visitor_id      TEXT,                       -- nullable: not sent by the current tracker.js,
-    session_id      TEXT,                       -- reserved for when/if you add these client-side
-    client_ts       BIGINT,                      -- epoch ms, as sent by tracker.js
+    visitor_id      TEXT,                   -- nullable: not sent by current tracker.js
+    session_id      TEXT,                   -- reserved for client-side session tracking
+    client_ts       BIGINT,                 -- epoch ms as sent by tracker.js
     received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_app_name      ON events (application_id, name);
-CREATE INDEX IF NOT EXISTS idx_events_received_at   ON events (received_at);
+CREATE INDEX IF NOT EXISTS idx_events_app_name       ON events (application_id, name);
+CREATE INDEX IF NOT EXISTS idx_events_received_at    ON events (received_at);
 CREATE INDEX IF NOT EXISTS idx_events_properties_gin ON events USING GIN (properties);
 
 -- -----------------------------------------------------------------------------
--- feedback: structured feedback/support submissions, kept separate from events
+-- feedback: structured contact/support submissions, kept separate from events
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS feedback (
-    id              BIGSERIAL PRIMARY KEY,
-    application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    email           TEXT NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-    topic           TEXT NOT NULL CHECK (topic IN (
-                        'General question',
-                        'Credit cards',
-                        'Loans',
-                        'Investing',
-                        'Insurance',
-                        'Feedback',
-                        'Report a problem'
-                    )),
-    message         TEXT NOT NULL,
-    page_url        TEXT,                        -- where the feedback form was submitted from
+    id              BIGSERIAL   PRIMARY KEY,
+    application_id  UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    name            TEXT        NOT NULL DEFAULT '',
+    email           TEXT        NOT NULL DEFAULT '',
+    topic           TEXT        NOT NULL DEFAULT 'General question',
+    message         TEXT        NOT NULL,
+    page_url        TEXT,
     received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -106,8 +103,21 @@ CREATE INDEX IF NOT EXISTS idx_feedback_app_time ON feedback (application_id, re
 CREATE INDEX IF NOT EXISTS idx_feedback_topic    ON feedback (topic);
 
 -- -----------------------------------------------------------------------------
--- Seed the demo application row so /collect works out of the box
+-- Seed demo apps
 -- -----------------------------------------------------------------------------
-INSERT INTO applications (site_id, name, description)
-VALUES ('db-hackathon', 'Deutsche Bank Hackathon Demo App', 'Mock banking app for the End User Analytics track')
+INSERT INTO applications (site_id, name, description) VALUES
+    ('demo-bank',  'Demo Bank App',  'Mock banking app for the End User Analytics track'),
+    ('demo-trade', 'Demo Trade App', 'Mock trading app for the End User Analytics track')
 ON CONFLICT (site_id) DO NOTHING;
+
+-- Seed default dashboard tiles for demo-bank
+-- INSERT INTO dashboard_tiles (id, application_id, kind, title, x, y, w, h) VALUES
+--     ('kpi-sessions',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-sessions',   'Sessions · last 7d',       0, 0,  2, 3),
+--     ('kpi-active',     (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-active',     'Active users now',          2, 0,  2, 3),
+--     ('kpi-completion', (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-completion', 'Loan completion',           4, 0,  2, 3),
+--     ('kpi-dropoff',    (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-dropoff',    'Biggest drop-off',          6, 0,  2, 3),
+--     ('chart-funnel',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-funnel',   'Loan application funnel',   0, 3,  4, 7),
+--     ('chart-daily',    (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-daily',    'Daily sessions',            4, 3,  4, 7),
+--     ('chart-errors',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-errors',   'Top form-error fields',     0, 10, 8, 7),
+--     ('chat',           (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chat',           'Ask the analyst',           8, 0,  4, 17)
+-- ON CONFLICT (id, application_id) DO NOTHING;

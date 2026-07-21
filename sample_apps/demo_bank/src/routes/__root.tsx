@@ -91,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     scripts: [
       {
         src: "/tracker.js",
-        "data-site-id": "db-hackathon",
+        "data-site-id": "demo-bank",
         "data-endpoint": "http://localhost:3000/collect",
       },
     ],
