@@ -18,6 +18,15 @@ frontend/.tanstack/**
 frontend/.nitro
 frontend/*.local
 
+sample_apps/demo_bank/node_modules
+sample_apps/demo_bank/dist
+sample_apps/demo_bank/dist-ssr
+sample_apps/demo_bank/.output
+sample_apps/demo_bank/.vinxi
+sample_apps/demo_bank/.tanstack
+sample_apps/demo_bank/.nitro
+sample_apps/demo_bank/*.local
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
