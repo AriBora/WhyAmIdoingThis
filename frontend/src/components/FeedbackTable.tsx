@@ -26,7 +26,7 @@ export function FeedbackTable({ appId }: { appId: string }) {
                 search: search || undefined,
             }),
         enabled: Boolean(appId),
-        refetchInterval: 30_000,
+        refetchInterval: 120_000,
     });
 
     const topics = useMemo(() => {

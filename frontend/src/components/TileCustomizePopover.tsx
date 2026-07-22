@@ -41,7 +41,7 @@ export function TileCustomizePopover({ tile }: { tile: Tile }) {
     update.mutate(patch);
   }
 
-  const isFeedback = tile.chart_type === "table" && tile.sql_query === "__feedback__";
+  const isFeedback = tile.id.startsWith("feedback_") || tile.sql_query === "__feedback__";
 
   return (
     <Popover>
@@ -141,13 +141,13 @@ export function TileCustomizePopover({ tile }: { tile: Tile }) {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">
-            Refresh interval · {draft.refresh_seconds ?? 30}s
+            Refresh interval · {draft.refresh_seconds ?? 120}s
           </Label>
           <Slider
             min={5}
             max={300}
             step={5}
-            value={[draft.refresh_seconds ?? 30]}
+            value={[draft.refresh_seconds ?? 120]}
             onValueChange={(v) => setDraft((d) => ({ ...d, refresh_seconds: v[0] }))}
             onValueCommit={(v) => commit({ refresh_seconds: v[0] })}
           />
@@ -156,7 +156,8 @@ export function TileCustomizePopover({ tile }: { tile: Tile }) {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full gap-2 text-destructive hover:text-destructive"
+            disabled={isFeedback}
+            className="w-full gap-2 text-destructive hover:text-destructive disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={() => {
               if (confirm(`Delete "${tile.title}"?`)) del.mutate();
             }}

@@ -79,7 +79,7 @@ function DashboardPage() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <div className="hidden md:block text-[11px] font-mono text-muted-foreground mr-1">
-              live · 30s
+              live · 120s
             </div>
             {appId && <ChartBuilderDialog appId={appId} />}
             {appId && <SchemaPanel appId={appId} />}
@@ -96,7 +96,7 @@ function DashboardPage() {
                 <DashboardGrid appId={appId} />
               </Suspense>
             </section>
-            <aside className="xl:sticky xl:top-[72px] xl:h-[calc(100vh-96px)]">
+            <aside className="xl:sticky xl:top-18 xl:h-[calc(100vh-96px)]">
               <ChatPanel appId={appId} />
             </aside>
           </div>

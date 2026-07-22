@@ -10,19 +10,39 @@ import { ChartRenderer } from "./ChartRenderer";
 
 const FEEDBACK_SENTINEL = "__feedback__";
 
+function feedbackLayoutKey(appId: string) {
+  return `feedback_tile_layout_${appId}`;
+}
+
+function saveFeedbackLayout(appId: string, item: { x: number; y: number; w: number; h: number }) {
+  try {
+    localStorage.setItem(feedbackLayoutKey(appId), JSON.stringify(item));
+  } catch { /* ignore */ }
+}
+
+function loadFeedbackLayout(appId: string): { x: number; y: number; w: number; h: number } | null {
+  try {
+    const raw = localStorage.getItem(feedbackLayoutKey(appId));
+    return raw ? (JSON.parse(raw) as { x: number; y: number; w: number; h: number }) : null;
+  } catch {
+    return null;
+  }
+}
+
 function synthesizeFeedbackTile(appId: string): Tile {
+  const saved = loadFeedbackLayout(appId);
   return {
     id: `feedback_${appId}`,
     application_id: appId,
     title: "Feedback",
     chart_type: "table",
     sql_query: FEEDBACK_SENTINEL,
-    x: 0,
-    y: 0,
-    w: 12,
-    h: 10,
+    x: saved?.x ?? 0,
+    y: saved?.y ?? 0,
+    w: saved?.w ?? 12,
+    h: saved?.h ?? 10,
     color: 265,
-    refresh_seconds: 30,
+    refresh_seconds: 120,
   };
 }
 
@@ -73,6 +93,11 @@ export function DashboardGrid({ appId }: { appId: string }) {
 
   function onLayoutChange(items: readonly LayoutItem[]) {
     const snapshot = items.map((l) => ({ ...l }));
+
+    // Persist feedback tile position locally (it has no backend row).
+    const fbItem = snapshot.find((l) => l.i.startsWith("feedback_"));
+    if (fbItem) saveFeedbackLayout(appId, { x: fbItem.x, y: fbItem.y, w: fbItem.w, h: fbItem.h });
+
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
     pendingSave.current = window.setTimeout(() => persistLayout.mutate(snapshot), 400);
   }
@@ -143,8 +168,8 @@ function useTileData(tile: Tile) {
         x_key: tile.x_key ?? undefined,
         y_key: tile.y_key ?? undefined,
       }),
-    refetchInterval: (tile.refresh_seconds ?? 30) * 1000,
-    staleTime: ((tile.refresh_seconds ?? 30) - 5) * 1000,
+    refetchInterval: (tile.refresh_seconds ?? 120) * 1000,
+    staleTime: ((tile.refresh_seconds ?? 120) - 5) * 1000,
   });
 }
 
