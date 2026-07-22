@@ -1,68 +1,99 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ResponsiveGridLayout, useContainerWidth } from "react-grid-layout";
 import type { LayoutItem } from "react-grid-layout";
-import { Activity, AlertTriangle, GripVertical, TrendingDown, Users } from "lucide-react";
-import { useSuspenseQuery, queryOptions } from "@tanstack/react-query";
-import { getDashboardStats } from "@/lib/stats.functions";
-import { ChartRenderer } from "@/components/ChartRenderer";
-import { ChatPanel } from "@/components/ChatPanel";
-import { CustomChartTile } from "@/components/CustomChartTile";
-import { useDashboard, dashboardStore, type Tile } from "@/lib/dashboard-store";
+import { GripVertical } from "lucide-react";
+import { api, type Tile } from "@/lib/api";
+import { TileCustomizePopover } from "./TileCustomizePopover";
+import { FeedbackTable } from "./FeedbackTable";
+import { ChartRenderer } from "./ChartRenderer";
 
-const statsQuery = queryOptions({
-  queryKey: ["dashboard-stats"],
-  queryFn: () => getDashboardStats(),
-  refetchInterval: 30_000,
-});
+const FEEDBACK_SENTINEL = "__feedback__";
 
-export function DashboardGrid() {
-  const { tiles, layout } = useDashboard();
-  const { data } = useSuspenseQuery(statsQuery);
+function synthesizeFeedbackTile(appId: string): Tile {
+  return {
+    id: `feedback_${appId}`,
+    application_id: appId,
+    title: "Feedback",
+    chart_type: "table",
+    sql_query: FEEDBACK_SENTINEL,
+    x: 0,
+    y: 0,
+    w: 12,
+    h: 10,
+    color: 265,
+    refresh_seconds: 30,
+  };
+}
+
+export function DashboardGrid({ appId }: { appId: string }) {
+  const qc = useQueryClient();
+  const { data: tiles = [] } = useQuery({
+    queryKey: ["tiles", appId],
+    queryFn: () => api.listTiles(appId),
+    enabled: Boolean(appId),
+  });
+
   const { width, containerRef, mounted } = useContainerWidth();
 
-  const visibleTiles = useMemo(() => tiles.filter((t) => !t.hidden), [tiles]);
-  const visibleIds = useMemo(
-    () => new Set(visibleTiles.map((t) => t.id)),
-    [visibleTiles],
+  const effectiveTiles: Tile[] = useMemo(() => {
+    // Always show the feedback tile by default; the backend may already
+    // return one, in which case we don't duplicate.
+    const hasFeedback = tiles.some((t) => t.sql_query === FEEDBACK_SENTINEL);
+    return hasFeedback ? tiles : [synthesizeFeedbackTile(appId), ...tiles];
+  }, [tiles, appId]);
+
+  const layout: LayoutItem[] = useMemo(
+    () =>
+      effectiveTiles.map((t) => ({
+        i: t.id,
+        x: t.x,
+        y: t.y,
+        w: t.w,
+        h: t.h,
+      })),
+    [effectiveTiles],
   );
 
-  // Only pass layout items for visible tiles; RGL requires every child to have layout.
-  const effectiveLayout: LayoutItem[] = useMemo(() => {
-    const byId = new Map(layout.map((l) => [l.i, l]));
-    return visibleTiles.map((t, i) => {
-      const existing = byId.get(t.id);
-      if (existing) return { ...existing };
-      // Fallback for tiles not in stored layout
-      return { i: t.id, x: (i * 4) % 12, y: 100 + i, w: 4, h: 7 };
-    });
-  }, [layout, visibleTiles]);
+  const pendingSave = useRef<number | null>(null);
+
+  const persistLayout = useMutation({
+    mutationFn: async (items: LayoutItem[]) => {
+      // Only PATCH real backend tiles, never the synthetic feedback tile.
+      await Promise.all(
+        items
+          .filter((l) => !l.i.startsWith("feedback_"))
+          .map((l) =>
+            api.updateTile(l.i, { x: l.x, y: l.y, w: l.w, h: l.h }).catch(() => null),
+          ),
+      );
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tiles", appId] }),
+  });
+
+  function onLayoutChange(items: readonly LayoutItem[]) {
+    const snapshot = items.map((l) => ({ ...l }));
+    if (pendingSave.current) window.clearTimeout(pendingSave.current);
+    pendingSave.current = window.setTimeout(() => persistLayout.mutate(snapshot), 400);
+  }
 
   return (
     <div ref={containerRef} className="w-full">
       {mounted && width > 0 && (
         <ResponsiveGridLayout
           width={width}
-          layouts={{ lg: effectiveLayout, md: effectiveLayout, sm: effectiveLayout }}
+          layouts={{ lg: layout, md: layout, sm: layout }}
           breakpoints={{ lg: 1200, md: 768, sm: 0 }}
           cols={{ lg: 12, md: 8, sm: 4 }}
           rowHeight={40}
           margin={[16, 16]}
           containerPadding={[0, 0]}
           dragConfig={{ handle: ".drag-handle" }}
-          onLayoutChange={(newLayout) => {
-            // Merge with hidden tiles' stored layout so hiding doesn't erase positions.
-            const merged: LayoutItem[] = [
-              ...newLayout.map((l) => ({ ...l })),
-              ...layout.filter((l) => !visibleIds.has(l.i)),
-            ];
-            dashboardStore.setLayout(merged);
-          }}
+          onLayoutChange={onLayoutChange}
         >
-          {visibleTiles.map((tile) => (
+          {effectiveTiles.map((tile) => (
             <div key={tile.id} className="rgl-tile">
-              <TileFrame tile={tile}>
-                <TileBody tile={tile} data={data} />
-              </TileFrame>
+              <TileFrame tile={tile} />
             </div>
           ))}
         </ResponsiveGridLayout>
@@ -71,10 +102,10 @@ export function DashboardGrid() {
   );
 }
 
-function TileFrame({ tile, children }: { tile: Tile; children: React.ReactNode }) {
+function TileFrame({ tile }: { tile: Tile }) {
   return (
     <div className="h-full flex flex-col bg-surface border border-border rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-border/50">
+      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-border/50 shrink-0">
         <button
           className="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-foreground"
           title="Drag to move"
@@ -84,143 +115,118 @@ function TileFrame({ tile, children }: { tile: Tile; children: React.ReactNode }
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
           {tile.title}
         </div>
+        <TileCustomizePopover tile={tile} />
       </div>
-      <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <TileBody tile={tile} />
+      </div>
     </div>
   );
 }
 
-type Stats = Awaited<ReturnType<typeof getDashboardStats>>;
-
-function TileBody({ tile, data }: { tile: Tile; data: Stats }) {
-  const { kpis, funnel, dailySessions, formErrors } = data;
-  const color = tile.kind !== "chat" ? tile.color : undefined;
-
-  switch (tile.kind) {
-    case "kpi-sessions":
-      return (
-        <KpiBody
-          icon={<Users className="w-4 h-4" />}
-          value={kpis.sessions7d.toLocaleString()}
-          hue={color}
-        />
-      );
-    case "kpi-active":
-      return (
-        <KpiBody
-          icon={<Activity className="w-4 h-4" />}
-          value={kpis.activeNow.toLocaleString()}
-          sub="last 5 min"
-          hue={color}
-        />
-      );
-    case "kpi-completion":
-      return (
-        <KpiBody
-          icon={<TrendingDown className="w-4 h-4" />}
-          value={`${kpis.completionRate.toFixed(1)}%`}
-          sub="last 30d"
-          hue={color}
-        />
-      );
-    case "kpi-dropoff":
-      return (
-        <KpiBody
-          icon={<AlertTriangle className="w-4 h-4" />}
-          value={kpis.biggestDropStep}
-          sub={
-            kpis.biggestDropCount
-              ? `−${kpis.biggestDropCount.toLocaleString()} sessions`
-              : "no data"
-          }
-          hue={color}
-          mono={false}
-        />
-      );
-    case "chart-funnel":
-      return (
-        <ChartBody>
-          <ChartRenderer
-            type="funnel"
-            xKey="step_name"
-            yKey="sessions"
-            data={funnel}
-            height="100%"
-            color={color}
-          />
-        </ChartBody>
-      );
-    case "chart-daily":
-      return (
-        <ChartBody>
-          <ChartRenderer
-            type="line"
-            xKey="day"
-            yKey="sessions"
-            data={dailySessions}
-            height="100%"
-            color={color}
-          />
-        </ChartBody>
-      );
-    case "chart-errors":
-      return (
-        <ChartBody>
-          <ChartRenderer
-            type="bar"
-            xKey="field"
-            yKey="errors"
-            data={formErrors}
-            height="100%"
-            color={color}
-          />
-        </ChartBody>
-      );
-    case "chat":
-      return (
-        <div className="h-full">
-          <ChatPanel embedded />
-        </div>
-      );
-    case "custom":
-      return <CustomChartTile tile={tile} />;
-    default:
-      return null;
+function TileBody({ tile }: { tile: Tile }) {
+  if (tile.sql_query === FEEDBACK_SENTINEL || tile.id.startsWith("feedback_")) {
+    return <FeedbackTable appId={tile.application_id} />;
   }
+  if (tile.chart_type === "kpi") return <KpiTile tile={tile} />;
+  if (tile.chart_type === "table") return <TableTile tile={tile} />;
+  return <ChartTile tile={tile} />;
 }
 
-function KpiBody({
-  icon,
-  value,
-  sub,
-  hue,
-  mono = true,
-}: {
-  icon: React.ReactNode;
-  value: string;
-  sub?: string;
-  hue?: number;
-  mono?: boolean;
-}) {
-  const color = typeof hue === "number" ? `oklch(0.58 0.22 ${hue})` : "var(--color-primary)";
+function useTileData(tile: Tile) {
+  return useQuery({
+    queryKey: ["tile-data", tile.id, tile.sql_query, tile.chart_type],
+    queryFn: () =>
+      api.runQuery(tile.application_id, {
+        sql_query: tile.sql_query,
+        chart_type: tile.chart_type,
+        x_key: tile.x_key ?? undefined,
+        y_key: tile.y_key ?? undefined,
+      }),
+    refetchInterval: (tile.refresh_seconds ?? 30) * 1000,
+    staleTime: ((tile.refresh_seconds ?? 30) - 5) * 1000,
+  });
+}
+
+function ChartTile({ tile }: { tile: Tile }) {
+  const { data, isLoading, isError } = useTileData(tile);
+  if (isLoading)
+    return (
+      <div className="h-full flex items-center justify-center text-xs text-muted-foreground animate-pulse">
+        Loading…
+      </div>
+    );
+  if (isError || !data)
+    return (
+      <div className="h-full flex items-center justify-center text-xs text-destructive">
+        Failed to load
+      </div>
+    );
+  const type: "bar" | "line" | "funnel" =
+    tile.chart_type === "line" || tile.chart_type === "funnel" ? tile.chart_type : "bar";
   return (
-    <div className="p-4 h-full flex flex-col justify-center">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
-        <span style={{ color }}>{icon}</span>
-      </div>
-      <div
-        className={`mt-1 ${mono ? "kpi-number text-3xl" : "font-semibold text-lg leading-tight"}`}
-        title={value}
-      >
-        {value}
-      </div>
-      {sub && <div className="text-xs text-muted-foreground font-mono mt-1">{sub}</div>}
+    <div className="h-full px-3 pb-3 pt-1">
+      <ChartRenderer
+        type={type}
+        xKey={tile.x_key ?? "label"}
+        yKey={tile.y_key ?? "value"}
+        data={data.rows}
+        height="100%"
+        color={tile.color ?? undefined}
+      />
     </div>
   );
 }
 
-function ChartBody({ children }: { children: React.ReactNode }) {
+function KpiTile({ tile }: { tile: Tile }) {
+  const { data } = useTileData(tile);
+  const yKey = tile.y_key ?? "value";
+  const value = data?.rows[0]?.[yKey];
+  const display =
+    typeof value === "number" ? value.toLocaleString() : value ? String(value) : "—";
+  const color =
+    typeof tile.color === "number" ? `oklch(0.58 0.22 ${tile.color})` : "var(--primary)";
   return (
-    <div className="w-full h-full px-3 pb-3 pt-1 min-h-0">{children}</div>
+    <div className="p-5 h-full flex flex-col justify-center">
+      <div className="kpi-number text-4xl" style={{ color }}>
+        {display}
+      </div>
+      <div className="text-xs text-muted-foreground font-mono mt-1">{yKey}</div>
+    </div>
+  );
+}
+
+function TableTile({ tile }: { tile: Tile }) {
+  const { data, isLoading } = useTileData(tile);
+  if (isLoading)
+    return (
+      <div className="p-4 text-xs text-muted-foreground animate-pulse">Loading…</div>
+    );
+  const cols = data?.columns ?? [];
+  return (
+    <div className="h-full overflow-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-surface text-muted-foreground">
+          <tr className="text-left">
+            {cols.map((c) => (
+              <th key={c} className="px-3 py-2 font-medium">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {(data?.rows ?? []).map((r, i) => (
+            <tr key={i} className="border-t border-border/60">
+              {cols.map((c) => (
+                <td key={c} className="px-3 py-1.5 font-mono">
+                  {String(r[c] ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

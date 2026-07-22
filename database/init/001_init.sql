@@ -106,18 +106,6 @@ CREATE INDEX IF NOT EXISTS idx_feedback_topic    ON feedback (topic);
 -- Seed demo apps
 -- -----------------------------------------------------------------------------
 INSERT INTO applications (site_id, name, description) VALUES
-    ('demo-bank',  'Demo Bank App',  'Mock banking app for the End User Analytics track'),
-    ('demo-trade', 'Demo Trade App', 'Mock trading app for the End User Analytics track')
+    ('demo-bank',  'Demo Bank App',  'Mock banking app for the End User Analytics'),
+    ('demo-trade', 'Demo Trade App', 'Mock trading app for the End User Analytics')
 ON CONFLICT (site_id) DO NOTHING;
-
--- Seed default dashboard tiles for demo-bank
--- INSERT INTO dashboard_tiles (id, application_id, kind, title, x, y, w, h) VALUES
---     ('kpi-sessions',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-sessions',   'Sessions · last 7d',       0, 0,  2, 3),
---     ('kpi-active',     (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-active',     'Active users now',          2, 0,  2, 3),
---     ('kpi-completion', (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-completion', 'Loan completion',           4, 0,  2, 3),
---     ('kpi-dropoff',    (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'kpi-dropoff',    'Biggest drop-off',          6, 0,  2, 3),
---     ('chart-funnel',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-funnel',   'Loan application funnel',   0, 3,  4, 7),
---     ('chart-daily',    (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-daily',    'Daily sessions',            4, 3,  4, 7),
---     ('chart-errors',   (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chart-errors',   'Top form-error fields',     0, 10, 8, 7),
---     ('chat',           (SELECT id FROM applications WHERE site_id = 'demo-bank'), 'chat',           'Ask the analyst',           8, 0,  4, 17)
--- ON CONFLICT (id, application_id) DO NOTHING;

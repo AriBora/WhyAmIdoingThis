@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               data-track="header_signout"
               onClick={() => {
-                track("button_click", { screen_name: "header", button_label: "Sign out" });
+                // track("button_click", { screen_name: "header", button_label: "Sign out" });
                 clearCurrentUser();
                 navigate({ to: "/" });
               }}

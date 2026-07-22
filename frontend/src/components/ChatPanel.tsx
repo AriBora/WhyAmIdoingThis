@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, Sparkles, User } from "lucide-react";
 import { ChartRenderer } from "./ChartRenderer";
+import { api } from "@/lib/api";
 
 type ChartSpec = {
   type: "bar" | "line" | "funnel";
@@ -18,13 +19,13 @@ type Msg = {
 };
 
 const SUGGESTIONS = [
-  "Where are users dropping off in the loan application flow?",
+  "Where are users dropping off in the loan flow?",
   "What's the most common form error?",
-  "How many sessions happened today vs last week?",
-  "Show me a funnel of the loan application",
+  "Sessions today vs last week?",
+  "Summarise the latest feedback",
 ];
 
-export function ChatPanel({ embedded = false }: { embedded?: boolean }) {
+export function ChatPanel({ appId }: { appId: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,40 +41,29 @@ export function ChatPanel({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [appId]);
+
+  // Reset conversation when the application changes.
+  useEffect(() => {
+    setMessages([]);
+  }, [appId]);
 
   async function send(text: string) {
     const q = text.trim();
     if (!q || loading) return;
-    const nextHistory: Msg[] = [
-      ...messages,
-      { role: "user", content: q, ts: Date.now() },
-    ];
-    setMessages(nextHistory);
+    const next: Msg[] = [...messages, { role: "user", content: q, ts: Date.now() }];
+    setMessages(next);
     setInput("");
     setLoading(true);
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          messages: nextHistory.map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = (await res.json()) as
-        | { text: string; charts: ChartSpec[] }
-        | { error: string };
-      if ("error" in data) {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: `⚠️ ${data.error}`, ts: Date.now() },
-        ]);
-      } else {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: data.text, charts: data.charts, ts: Date.now() },
-        ]);
-      }
+      const data = await api.chat(
+        appId,
+        next.map((m) => ({ role: m.role, content: m.content })),
+      );
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: data.text, charts: data.charts, ts: Date.now() },
+      ]);
     } catch (e) {
       setMessages((m) => [
         ...m,
@@ -89,31 +79,25 @@ export function ChatPanel({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  const wrapCls = embedded
-    ? "flex flex-col h-full"
-    : "flex flex-col h-full bg-surface border border-border rounded-2xl overflow-hidden";
-
   return (
-    <div className={wrapCls}>
-      {!embedded && (
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-semibold text-sm">Ask the analyst</div>
-            <div className="text-xs text-muted-foreground font-mono">
-              claude · read-only SQL
-            </div>
+    <div className="flex flex-col h-full bg-surface border border-border rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <Sparkles className="w-4 h-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="font-semibold text-sm">Ask the analyst</div>
+          <div className="text-[11px] text-muted-foreground font-mono truncate">
+            read-only SQL · schema-aware
           </div>
         </div>
-      )}
+      </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {messages.length === 0 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Ask anything about your events. Try one of these:
+              Ask anything about events or feedback for this app. Try:
             </p>
             <div className="flex flex-col gap-2">
               {SUGGESTIONS.map((s) => (
@@ -161,7 +145,7 @@ export function ChatPanel({ embedded = false }: { embedded?: boolean }) {
               }
             }}
             rows={1}
-            placeholder="e.g. Where do users drop off?"
+            placeholder="Ask a question…"
             className="flex-1 bg-transparent resize-none outline-none text-sm max-h-32 py-1"
             disabled={loading}
           />
@@ -229,13 +213,7 @@ function MessageBubble({ msg }: { msg: Msg }) {
                 {c.title}
               </div>
             )}
-            <ChartRenderer
-              type={c.type}
-              xKey={c.xKey}
-              yKey={c.yKey}
-              data={c.data}
-              height={220}
-            />
+            <ChartRenderer type={c.type} xKey={c.xKey} yKey={c.yKey} data={c.data} height={220} />
           </div>
         ))}
         <div className="text-[10px] text-muted-foreground font-mono mt-1">{time}</div>
