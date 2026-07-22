@@ -42,7 +42,7 @@ function Signup() {
       ok = false;
     }
     if (!ok) return;
-    track("account_opened", { account_type: form.accountType });
+    track("flow_completed", { flow_name: "account_opening", step_number: 1, step_name: form.accountType });
     track("button_click", { screen_name: "signup", button_label: "Open account" });
     navigate({ to: "/dashboard" });
   }

@@ -26,7 +26,7 @@ function OfferingDetail() {
 
   function apply() {
     if (!offering) return;
-    track("apply_click", {
+    track("offering_click", {
       screen_name: `offering_${offering.id}`,
       category: offering.category,
       offering_id: offering.id,

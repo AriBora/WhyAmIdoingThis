@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, Card, Stepper } from "@/components/AppShell";
-import { track, useScreenView, completeFlow } from "@/lib/analytics";
+import { track, useScreenView } from "@/lib/analytics";
 import { offerings, getOffering, categoryLabels, type OfferingCategory } from "@/lib/offerings";
 
 type ApplySearch = { offering?: string };
@@ -80,12 +80,7 @@ function ApplyPage() {
   }
 
   function submit() {
-    track("application_submitted", {
-      category,
-      offering_id: product,
-    });
-    track("flow_completed", { flow_name: `apply_${category}` });
-    completeFlow("loan_application"); // no-op for others; keeps abandonment clean
+    track("flow_completed", { flow_name: `apply_${category}`, item_type: category === "investment" ? "investing" : category as "credit_card" | "debit_card" | "insurance", item_id: product });
     setStep(5);
   }
 

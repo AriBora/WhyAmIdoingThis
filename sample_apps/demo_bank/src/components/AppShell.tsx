@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { track } from "@/lib/analytics";
+import { identifyUser, track } from "@/lib/analytics";
 import { clearCurrentUser, getCurrentUser } from "@/lib/user-portfolio";
 import { User } from "lucide-react";
 
@@ -23,7 +23,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               data-track="header_signout"
               onClick={() => {
-                // track("button_click", { screen_name: "header", button_label: "Sign out" });
+                track("button_click", { screen_name: "header", element_label: "Sign out" });
+                identifyUser(null);
                 clearCurrentUser();
                 navigate({ to: "/" });
               }}

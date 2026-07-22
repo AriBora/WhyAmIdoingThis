@@ -69,9 +69,27 @@ async def get_schema(site_id: str) -> JSONResponse:
 class CollectPayload(BaseModel):
     site_id: str
     name: str
-    properties: dict[str, Any] = {}
+    screen_name: str | None = None
+    flow_name: str | None = None
+    step_number: int | None = None
+    step_name: str | None = None
+    item_type: str | None = None
+    item_id: str | None = None
+    item_label: str | None = None
+    element_label: str | None = None
+    visitor_id: str | None = None
+    session_id: str | None = None
     ts: int | None = None
     url: str | None = None
+
+
+class FeedbackPayload(BaseModel):
+    site_id: str = "demo-bank"
+    name: str
+    email: str
+    topic: str = "General question"
+    message: str
+    page_url: str | None = None
 
 
 @app.post("/collect", status_code=204)
@@ -90,9 +108,22 @@ async def collect(request: Request) -> None:
     await insert_event(
         site_id=payload.site_id,
         name=payload.name,
-        properties=payload.properties,
+        event=payload,
         url=payload.url,
         client_ts=payload.ts,
+    )
+
+
+@app.post("/feedback", status_code=204)
+async def collect_feedback(payload: FeedbackPayload) -> None:
+    pool = await _pool_get()
+    app_id: str = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", payload.site_id)
+    await pool.execute(
+        """
+        INSERT INTO feedback (application_id, name, email, topic, message, page_url)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        app_id, payload.name, payload.email, payload.topic, payload.message, payload.page_url,
     )
 
 

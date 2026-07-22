@@ -22,7 +22,6 @@ function Landing() {
       category: o.category,
       offering_id: o.id,
       offering_title: o.title,
-      cta: o.cta,
     });
     track("button_click", { screen_name: "landing", button_label: o.title });
     navigate({ to: "/offerings/$id", params: { id: o.id } });

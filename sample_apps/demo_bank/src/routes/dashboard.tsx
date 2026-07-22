@@ -53,7 +53,7 @@ function Dashboard() {
   }
 
   function openHolding(h: Holding) {
-    track("holding_click", {
+    track("offering_click", {
       screen_name: "dashboard",
       holding_id: h.id,
       category: h.category,

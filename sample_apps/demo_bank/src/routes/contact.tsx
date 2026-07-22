@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { track, useScreenView } from "@/lib/analytics";
+import { submitFeedback, track, useScreenView } from "@/lib/analytics";
 
 export const Route = createFileRoute("/contact")({
   component: Contact,
@@ -24,14 +24,8 @@ function Contact() {
     if (!email) { track("form_error", { screen_name: "contact", field_name: "email" }); ok = false; }
     if (!message) { track("form_error", { screen_name: "contact", field_name: "message" }); ok = false; }
     if (!ok) return;
-    track("contact_submitted", {
-      screen_name: "contact",
-      topic,
-      name,
-      email,
-      message,
-      message_length: message.length,
-    });
+    submitFeedback({ name, email, topic, message });
+    track("button_click", { screen_name: "contact", element_label: `Submit contact form: ${topic}` });
     track("button_click", { screen_name: "contact", button_label: "Send message" });
     setSent(true);
   }
@@ -103,7 +97,7 @@ function Contact() {
                 value={topic}
                 onChange={(e) => {
                   setTopic(e.target.value);
-                  track("contact_topic_selected", { topic: e.target.value });
+                  track("button_click", { screen_name: "contact", element_label: `Select topic: ${e.target.value}` });
                 }}
                 className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               >

@@ -16,140 +16,11 @@ _DISALLOWED_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-# These event names carry structured contact/feedback data → also written to `feedback`.
-_FEEDBACK_EVENTS = {"contact_submitted", "feedback_submitted", "feedback"}
-
-
 async def _pool_get() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
     return _pool
-
-
-# async def init_db() -> None:
-#     """Safety-net schema creation for local dev (Docker runs 001_init.sql on first boot)."""
-#     pool = await _pool_get()
-#     await pool.execute("""
-#         CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-#         CREATE TABLE IF NOT EXISTS applications (
-#             id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-#             site_id     TEXT        NOT NULL UNIQUE,
-#             name        TEXT        NOT NULL,
-#             description TEXT,
-#             created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-#             updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-#         );
-
-#         CREATE TABLE IF NOT EXISTS dashboard_tiles (
-#             id             TEXT        NOT NULL,
-#             application_id UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-#             PRIMARY KEY (id, application_id),
-#             kind           TEXT        NOT NULL DEFAULT 'custom',
-#             title          TEXT        NOT NULL,
-#             x              INT         NOT NULL DEFAULT 0,
-#             y              INT         NOT NULL DEFAULT 0,
-#             w              INT         NOT NULL DEFAULT 4,
-#             h              INT         NOT NULL DEFAULT 4,
-#             chart_type     TEXT,
-#             sql_query      TEXT,
-#             x_key          TEXT,
-#             y_key          TEXT,
-#             created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-#             updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-#         );
-
-#         CREATE INDEX IF NOT EXISTS idx_tiles_app ON dashboard_tiles (application_id);
-
-#         CREATE TABLE IF NOT EXISTS events (
-#             id              BIGSERIAL   PRIMARY KEY,
-#             application_id  UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-#             name            TEXT        NOT NULL,
-#             properties      JSONB       NOT NULL DEFAULT '{}'::jsonb,
-#             url             TEXT,
-#             visitor_id      TEXT,
-#             session_id      TEXT,
-#             client_ts       BIGINT,
-#             received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-#         );
-
-#         CREATE INDEX IF NOT EXISTS idx_events_app_name       ON events (application_id, name);
-#         CREATE INDEX IF NOT EXISTS idx_events_received_at    ON events (received_at);
-#         CREATE INDEX IF NOT EXISTS idx_events_properties_gin ON events USING GIN (properties);
-
-#         CREATE TABLE IF NOT EXISTS feedback (
-#             id              BIGSERIAL   PRIMARY KEY,
-#             application_id  UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-#             name            TEXT        NOT NULL DEFAULT '',
-#             email           TEXT        NOT NULL DEFAULT '',
-#             topic           TEXT        NOT NULL DEFAULT 'General question',
-#             message         TEXT        NOT NULL,
-#             page_url        TEXT,
-#             received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-#         );
-
-#         CREATE INDEX IF NOT EXISTS idx_feedback_app_time ON feedback (application_id, received_at);
-#         CREATE INDEX IF NOT EXISTS idx_feedback_topic    ON feedback (topic);
-#     """)
-
-#     await pool.execute("""
-#         INSERT INTO applications (site_id, name, description) VALUES
-#             ('demo-bank',  'Demo Bank App',  'Retail banking application for end user analytics'),
-#             ('demo-trade', 'Demo Trade App', 'Online trading application for end user analytics')
-#         ON CONFLICT (site_id) DO NOTHING;
-#     """)
-
-#     # Seed sample events if events table is empty
-#     event_count = await pool.fetchval("SELECT count(*) FROM events;")
-#     if event_count == 0:
-#         demo_bank_id = await pool.fetchval("SELECT id FROM applications WHERE site_id = 'demo-bank'")
-#         demo_trade_id = await pool.fetchval("SELECT id FROM applications WHERE site_id = 'demo-trade'")
-
-#         sample_events = [
-#             (demo_bank_id, 'page_view', json.dumps({"screen_name": "home"}), '/home', 'v_101', 's_01', None),
-#             (demo_bank_id, 'session_start', json.dumps({"device": "mobile"}), '/home', 'v_101', 's_01', None),
-#             (demo_bank_id, 'screen_view', json.dumps({"screen_name": "loan_start"}), '/loan/start', 'v_101', 's_01', None),
-#             (demo_bank_id, 'flow_step', json.dumps({"flow_name": "loan_application", "step_number": 1, "step_name": "personal_info"}), '/loan/start', 'v_101', 's_01', None),
-#             (demo_bank_id, 'flow_step', json.dumps({"flow_name": "loan_application", "step_number": 2, "step_name": "income_verification"}), '/loan/income', 'v_101', 's_01', None),
-#             (demo_bank_id, 'form_error', json.dumps({"field_name": "income", "screen_name": "loan_step_2", "error": "Invalid format"}), '/loan/income', 'v_101', 's_01', None),
-#             (demo_bank_id, 'flow_abandoned', json.dumps({"flow_name": "loan_application", "last_step": 2}), '/loan/income', 'v_101', 's_01', None),
-#             (demo_bank_id, 'button_click', json.dumps({"button_id": "submit_loan"}), '/loan/income', 'v_102', 's_02', None),
-#             (demo_bank_id, 'flow_completed', json.dumps({"flow_name": "loan_application"}), '/loan/success', 'v_102', 's_02', None),
-#             (demo_trade_id, 'page_view', json.dumps({"screen_name": "portfolio"}), '/portfolio', 'v_201', 's_10', None),
-#             (demo_trade_id, 'session_start', json.dumps({"device": "desktop"}), '/portfolio', 'v_201', 's_10', None),
-#             (demo_trade_id, 'flow_step', json.dumps({"flow_name": "stock_trade", "step_number": 1, "ticker": "AAPL"}), '/trade/buy', 'v_201', 's_10', None),
-#             (demo_trade_id, 'flow_completed', json.dumps({"flow_name": "stock_trade", "shares": 10}), '/trade/success', 'v_201', 's_10', None),
-#         ]
-#         await pool.executemany(
-#             """
-#             INSERT INTO events (application_id, name, properties, url, visitor_id, session_id, client_ts)
-#             VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
-#             """,
-#             sample_events,
-#         )
-
-#     # Seed sample feedback if feedback table is empty
-#     feedback_count = await pool.fetchval("SELECT count(*) FROM feedback;")
-#     if feedback_count == 0:
-#         demo_bank_id = await pool.fetchval("SELECT id FROM applications WHERE site_id = 'demo-bank'")
-#         demo_trade_id = await pool.fetchval("SELECT id FROM applications WHERE site_id = 'demo-trade'")
-
-#         sample_feedback = [
-#             (demo_bank_id, 'Alice Vance', 'alice@example.com', 'Bug', 'Got stuck on step 2 of the loan application.', '/loan/income'),
-#             (demo_bank_id, 'Bob Smith', 'bob@example.com', 'Feature request', 'Would love dark mode support on mobile bank dashboard.', '/dashboard'),
-#             (demo_bank_id, 'Charlie Brown', 'charlie@example.com', 'Praise', 'Super clean interface and fast response times!', '/home'),
-#             (demo_trade_id, 'Dave Miller', 'dave@example.com', 'Report a problem', 'Trade execution latency was high during market open.', '/trade/buy'),
-#             (demo_trade_id, 'Eve Taylor', 'eve@example.com', 'Feature request', 'Please add stop-loss orders to the trade form.', '/trade/buy'),
-#         ]
-#         await pool.executemany(
-#             """
-#             INSERT INTO feedback (application_id, name, email, topic, message, page_url)
-#             VALUES ($1, $2, $3, $4, $5, $6)
-#             """,
-#             sample_feedback,
-#         )
-
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -289,48 +160,35 @@ async def get_feedback(
 async def insert_event(
     site_id: str,
     name: str,
-    properties: dict[str, Any] | None,
+    event: Any,
     url: str | None,
     client_ts: int | None,
 ) -> None:
-    props = properties or {}
     pool = await _pool_get()
-    app_id: str = await pool.fetchval(
-        """
-        INSERT INTO applications (site_id, name, description)
-        VALUES ($1, $1, 'Auto-registered')
-        ON CONFLICT (site_id) DO UPDATE SET site_id = EXCLUDED.site_id
-        RETURNING id
-        """,
-        site_id,
-    )
-
-    if name in _FEEDBACK_EVENTS:
-        email = str(props.get("email") or "")
-        message = str(props.get("message") or "")
-        if email and message:
-            await pool.execute(
-                """
-                INSERT INTO feedback (application_id, name, email, topic, message, page_url)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """,
-                app_id,
-                str(props.get("name") or ""),
-                email,
-                str(props.get("topic") or "General question"),
-                message,
-                url,
-            )
+    app_id: str = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", site_id)
 
     await pool.execute(
         """
-        INSERT INTO events (application_id, name, properties, url, client_ts)
-        VALUES ($1, $2, $3::jsonb, $4, $5)
+        INSERT INTO events (
+            application_id, name, screen_name, flow_name, step_number, step_name,
+            item_type, item_id, item_label, element_label, url, visitor_id,
+            session_id, client_ts
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         """,
         app_id,
         name,
-        json.dumps(props),
+        event.screen_name,
+        event.flow_name,
+        event.step_number,
+        event.step_name,
+        event.item_type,
+        event.item_id,
+        event.item_label,
+        event.element_label,
         url,
+        event.visitor_id,
+        event.session_id,
         client_ts,
     )
 

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { track, useScreenView } from "@/lib/analytics";
+import { identifyUser, track, useScreenView } from "@/lib/analytics";
 import { setCurrentUser, users } from "@/lib/user-portfolio";
 
 type LoginSearch = { redirect?: string };
@@ -36,11 +36,12 @@ function Login() {
 
     setSelectedId(userId);
     setCurrentUser(userId);
+    identifyUser(userId);
 
-    track("login_success", { screen_name: "login", user_id: userId });
+    track("button_click", { screen_name: "login", element_label: "Sign in" });
     track("button_click", { screen_name: "login", button_label: "Sign in" });
     if (redirect) {
-      track("post_login_redirect", { screen_name: "login", redirect });
+      track("button_click", { screen_name: "login", element_label: "Continue after sign in" });
       // redirect may be a full internal path with query string
       window.location.assign(redirect);
       return;
