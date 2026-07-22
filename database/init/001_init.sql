@@ -35,12 +35,6 @@ CREATE TABLE IF NOT EXISTS dashboard_tiles (
     id             TEXT        NOT NULL,
     application_id UUID        NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
     PRIMARY KEY (id, application_id),
-
-    kind           TEXT        NOT NULL DEFAULT 'custom',
-                                        -- built-in: 'kpi-sessions' | 'kpi-active' | 'kpi-completion'
-                                        --           | 'kpi-dropoff' | 'chart-funnel' | 'chart-daily'
-                                        --           | 'chart-errors' | 'chat'
-                                        -- custom:   'custom'
     title          TEXT        NOT NULL,
 
     -- react-grid-layout position/size
