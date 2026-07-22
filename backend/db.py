@@ -51,33 +51,37 @@ async def get_app_schema(site_id: str) -> dict[str, Any]:
     event_rows = await pool.fetch("SELECT DISTINCT name FROM events WHERE application_id = $1 ORDER BY name", app_id)
     event_names = [r["name"] for r in event_rows]
 
-    sample_props = []
-    try:
-        sample_props_rows = await pool.fetch(
-            """
-            SELECT DISTINCT key
-            FROM events, LATERAL jsonb_object_keys(properties) AS key
-            WHERE application_id = $1
-            LIMIT 20
-            """,
-            app_id,
-        )
-        sample_props = [r["key"] for r in sample_props_rows]
-    except Exception:
-        sample_props = ["screen_name", "flow_name", "step_number", "field_name", "topic"]
+    screen_rows = await pool.fetch("SELECT DISTINCT screen_name FROM events WHERE application_id = $1 AND screen_name IS NOT NULL ORDER BY screen_name", app_id)
+    screen_names = [r["screen_name"] for r in screen_rows]
+
+    flow_rows = await pool.fetch("SELECT DISTINCT flow_name FROM events WHERE application_id = $1 AND flow_name IS NOT NULL ORDER BY flow_name", app_id)
+    flow_names = [r["flow_name"] for r in flow_rows]
+
+    item_type_rows = await pool.fetch("SELECT DISTINCT item_type FROM events WHERE application_id = $1 AND item_type IS NOT NULL ORDER BY item_type", app_id)
+    item_types = [r["item_type"] for r in item_type_rows]
+
+    element_rows = await pool.fetch("SELECT DISTINCT element_label FROM events WHERE application_id = $1 AND element_label IS NOT NULL ORDER BY element_label", app_id)
+    element_labels = [r["element_label"] for r in element_rows]
 
     event_count = await pool.fetchval("SELECT count(*) FROM events WHERE application_id = $1", app_id) or 0
 
     events_columns = [
-        {"name": "id", "type": "bigint", "distinct_count": event_count, "sample_values": [1, 2, 3]},
-        {"name": "application_id", "type": "uuid", "distinct_count": 1, "sample_values": [str(app_id)]},
+        {"name": "id", "type": "bigint", "description": "primary key", "distinct_count": event_count, "sample_values": [1, 2, 3]},
+        {"name": "application_id", "type": "uuid", "description": "FK to applications", "distinct_count": 1, "sample_values": [str(app_id)]},
         {"name": "name", "type": "text", "description": "event name", "distinct_count": len(event_names), "sample_values": event_names[:5]},
-        {"name": "properties", "type": "jsonb", "description": "event specific payload", "sample_values": sample_props[:5]},
-        {"name": "url", "type": "text", "sample_values": ["/home", "/loan/start", "/loan/income"]},
-        {"name": "visitor_id", "type": "text", "sample_values": ["v_101", "v_102"]},
-        {"name": "session_id", "type": "text", "sample_values": ["s_01", "s_02"]},
-        {"name": "client_ts", "type": "bigint"},
-        {"name": "received_at", "type": "timestamptz"},
+        {"name": "screen_name", "type": "text", "description": "screen/page name", "distinct_count": len(screen_names), "sample_values": screen_names[:5]},
+        {"name": "flow_name", "type": "text", "description": "multi-step flow name", "distinct_count": len(flow_names), "sample_values": flow_names[:5]},
+        {"name": "step_number", "type": "int", "description": "step sequence number", "sample_values": [1, 2, 3]},
+        {"name": "step_name", "type": "text", "description": "step label", "sample_values": ["personal_info", "financial_info", "review"]},
+        {"name": "item_type", "type": "text", "description": "product/item type", "distinct_count": len(item_types), "sample_values": item_types[:5]},
+        {"name": "item_id", "type": "text", "description": "product slug/id", "sample_values": ["cash-rewards", "AAPL"]},
+        {"name": "item_label", "type": "text", "description": "product title", "sample_values": ["Cash Rewards", "Apple Inc."]},
+        {"name": "element_label", "type": "text", "description": "clicked element/button text", "distinct_count": len(element_labels), "sample_values": element_labels[:5]},
+        {"name": "url", "type": "text", "description": "page URL", "sample_values": ["/", "/login", "/dashboard"]},
+        {"name": "visitor_id", "type": "text", "description": "visitor / user ID", "sample_values": ["u1", "u2"]},
+        {"name": "session_id", "type": "text", "description": "browser session UUID", "sample_values": ["s1", "s2"]},
+        {"name": "client_ts", "type": "bigint", "description": "client epoch timestamp ms"},
+        {"name": "received_at", "type": "timestamptz", "description": "server timestamp"},
     ]
 
     # Feedback metadata
@@ -87,14 +91,14 @@ async def get_app_schema(site_id: str) -> dict[str, Any]:
     feedback_count = await pool.fetchval("SELECT count(*) FROM feedback WHERE application_id = $1", app_id) or 0
 
     feedback_columns = [
-        {"name": "id", "type": "bigint", "distinct_count": feedback_count, "sample_values": [1, 2]},
-        {"name": "application_id", "type": "uuid", "distinct_count": 1, "sample_values": [str(app_id)]},
-        {"name": "name", "type": "text", "sample_values": ["Alice Vance", "Bob Smith"]},
-        {"name": "topic", "type": "text", "distinct_count": len(topics), "sample_values": topics[:5]},
-        {"name": "email", "type": "text", "sample_values": ["alice@example.com", "bob@example.com"]},
-        {"name": "page_url", "type": "text", "sample_values": ["/loan/income", "/dashboard"]},
-        {"name": "message", "type": "text"},
-        {"name": "received_at", "type": "timestamptz"},
+        {"name": "id", "type": "bigint", "description": "primary key", "distinct_count": feedback_count, "sample_values": [1, 2]},
+        {"name": "application_id", "type": "uuid", "description": "FK to applications", "distinct_count": 1, "sample_values": [str(app_id)]},
+        {"name": "name", "type": "text", "description": "submitter name", "sample_values": ["Alice Vance", "Bob Smith"]},
+        {"name": "email", "type": "text", "description": "submitter email", "sample_values": ["alice@example.com", "bob@example.com"]},
+        {"name": "topic", "type": "text", "description": "feedback category", "distinct_count": len(topics), "sample_values": topics[:5]},
+        {"name": "message", "type": "text", "description": "feedback content"},
+        {"name": "page_url", "type": "text", "description": "origin page URL", "sample_values": ["/loan/income", "/dashboard"]},
+        {"name": "received_at", "type": "timestamptz", "description": "server timestamp"},
     ]
 
     return {
@@ -102,9 +106,13 @@ async def get_app_schema(site_id: str) -> dict[str, Any]:
             "rows_count": event_count,
             "columns": events_columns,
             "event_names": event_names,
-            "sample_properties": sample_props,
+            "flow_names": flow_names,
+            "screen_names": screen_names,
+            "item_types": item_types,
+            "sample_properties": ["screen_name", "flow_name", "step_number", "step_name", "item_type", "item_id", "element_label"],
         },
         "feedback": {
+            "rows_count": feedback_count,
             "columns": feedback_columns,
             "topics": topics,
         },
@@ -197,15 +205,99 @@ async def insert_event(
 # Dashboard tiles
 # ---------------------------------------------------------------------------
 
+DEFAULT_TILES = [
+    {
+        "id": "tile_events_by_type",
+        "title": "Events by Type",
+        "chart_type": "bar",
+        "x_key": "label",
+        "y_key": "value",
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 6,
+        "sql_template": """SELECT name AS label, COUNT(*)::int AS value
+FROM events
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '{site_id}')
+GROUP BY name
+ORDER BY value DESC""",
+    },
+    {
+        "id": "tile_screen_views",
+        "title": "Screen Views",
+        "chart_type": "bar",
+        "x_key": "label",
+        "y_key": "value",
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 6,
+        "sql_template": """SELECT COALESCE(screen_name, 'landing') AS label, COUNT(*)::int AS value
+FROM events
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '{site_id}')
+  AND name = 'screen_view'
+GROUP BY screen_name
+ORDER BY value DESC""",
+    },
+    {
+        "id": "tile_flow_steps",
+        "title": "Flow Step Progress",
+        "chart_type": "funnel",
+        "x_key": "label",
+        "y_key": "value",
+        "x": 0,
+        "y": 6,
+        "w": 6,
+        "h": 6,
+        "sql_template": """SELECT COALESCE(step_name, 'Step ' || step_number::text) AS label, COUNT(*)::int AS value
+FROM events
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '{site_id}')
+  AND flow_name IS NOT NULL
+GROUP BY step_name, step_number
+ORDER BY step_number ASC NULLS LAST""",
+    },
+    {
+        "id": "tile_total_visitors",
+        "title": "Total Visitors",
+        "chart_type": "kpi",
+        "x_key": "label",
+        "y_key": "value",
+        "x": 6,
+        "y": 6,
+        "w": 3,
+        "h": 3,
+        "sql_template": """SELECT COUNT(DISTINCT visitor_id)::int AS value
+FROM events
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '{site_id}')""",
+    },
+    {
+        "id": "tile_form_errors",
+        "title": "Form Error Count",
+        "chart_type": "kpi",
+        "x_key": "label",
+        "y_key": "value",
+        "x": 9,
+        "y": 6,
+        "w": 3,
+        "h": 3,
+        "sql_template": """SELECT COUNT(*)::int AS value
+FROM events
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '{site_id}')
+  AND name = 'form_error'""",
+    },
+]
+
+
 async def get_tiles(site_id: str) -> list[dict[str, Any]]:
-    """Return all tiles for the given site_id, ordered by (y, x)."""
+    """Return all tiles for the given site_id, ordered by (y, x). Seeds defaults if empty."""
     pool = await _pool_get()
     rows = await pool.fetch(
         """
-        SELECT t.id, t.kind, t.title,
+        SELECT t.id, t.title,
                t.x, t.y, t.w, t.h,
                t.chart_type, t.sql_query, t.x_key, t.y_key,
-               t.created_at, t.updated_at
+               t.created_at, t.updated_at,
+               a.site_id AS application_id
         FROM dashboard_tiles t
         JOIN applications a ON a.id = t.application_id
         WHERE a.site_id = $1
@@ -213,6 +305,36 @@ async def get_tiles(site_id: str) -> list[dict[str, Any]]:
         """,
         site_id,
     )
+    if not rows:
+        # Auto-seed default tiles for this application
+        for t in DEFAULT_TILES:
+            tile_dict = {
+                "id": f"{t['id']}_{site_id}",
+                "title": t["title"],
+                "chart_type": t["chart_type"],
+                "x_key": t["x_key"],
+                "y_key": t["y_key"],
+                "x": t["x"],
+                "y": t["y"],
+                "w": t["w"],
+                "h": t["h"],
+                "sql_query": t["sql_template"].format(site_id=site_id),
+            }
+            await upsert_tile(site_id, tile_dict)
+        rows = await pool.fetch(
+            """
+            SELECT t.id, t.title,
+                   t.x, t.y, t.w, t.h,
+                   t.chart_type, t.sql_query, t.x_key, t.y_key,
+                   t.created_at, t.updated_at,
+                   a.site_id AS application_id
+            FROM dashboard_tiles t
+            JOIN applications a ON a.id = t.application_id
+            WHERE a.site_id = $1
+            ORDER BY t.y, t.x
+            """,
+            site_id,
+        )
     return [dict(r) for r in rows]
 
 
@@ -239,10 +361,9 @@ async def upsert_tile(site_id: str, tile: dict[str, Any]) -> dict[str, Any]:
     row = await pool.fetchrow(
         """
         INSERT INTO dashboard_tiles
-            (id, application_id, kind, title, x, y, w, h, chart_type, sql_query, x_key, y_key)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            (id, application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (id, application_id) DO UPDATE SET
-            kind       = EXCLUDED.kind,
             title      = EXCLUDED.title,
             x          = EXCLUDED.x,
             y          = EXCLUDED.y,
@@ -253,11 +374,10 @@ async def upsert_tile(site_id: str, tile: dict[str, Any]) -> dict[str, Any]:
             x_key      = EXCLUDED.x_key,
             y_key      = EXCLUDED.y_key,
             updated_at = now()
-        RETURNING id, kind, title, x, y, w, h, chart_type, sql_query, x_key, y_key, created_at, updated_at
+        RETURNING id, title, x, y, w, h, chart_type, sql_query, x_key, y_key, created_at, updated_at
         """,
         tile["id"],
         app_id,
-        tile.get("kind", "custom"),
         tile["title"],
         tile.get("x", 0),
         tile.get("y", 0),

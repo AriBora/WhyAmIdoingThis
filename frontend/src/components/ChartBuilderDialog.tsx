@@ -74,30 +74,7 @@ function AIBuilder({ appId, onDone }: { appId: string; onDone: () => void }) {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch("/api/custom-chart", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ prompt: p, application_id: appId }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const spec = (await res.json()) as {
-                title: string;
-                chartType: "bar" | "line" | "funnel";
-                xKey: string;
-                yKey: string;
-                sql: string | null;
-            };
-            await api.createTile(appId, {
-                title: spec.title || p,
-                chart_type: spec.chartType,
-                sql_query: spec.sql ?? "",
-                x_key: spec.xKey,
-                y_key: spec.yKey,
-                x: 0,
-                y: 9999,
-                w: 6,
-                h: 8,
-            });
+            await api.customChart(appId, p);
             qc.invalidateQueries({ queryKey: ["tiles", appId] });
             setPrompt("");
             onDone();
@@ -372,7 +349,7 @@ function buildSql(opts: {
             : `COUNT(*)::int`;
     return `SELECT "${groupBy}" AS label, ${valueExpr} AS value
 FROM ${table}
-WHERE application_id = '${safeAppId}'
+WHERE application_id = (SELECT id FROM applications WHERE site_id = '${safeAppId}')
 GROUP BY 1
 ORDER BY 2 ${order.toUpperCase()}
 LIMIT ${limit}`;

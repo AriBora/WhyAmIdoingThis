@@ -185,7 +185,7 @@ async def patch_tile(tile_id: str, body: PatchTilePayload) -> JSONResponse:
     pool = await _pool_get()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT application_id, kind, title, x, y, w, h, chart_type, sql_query, x_key, y_key FROM dashboard_tiles WHERE id = $1",
+            "SELECT application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key FROM dashboard_tiles WHERE id = $1",
             tile_id,
         )
         if not row:

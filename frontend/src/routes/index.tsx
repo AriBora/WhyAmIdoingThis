@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Suspense, useEffect } from "react";
 import { Palette, Moon, Sun } from "lucide-react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { DashboardGrid } from "@/components/DashboardGrid";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AppSwitcher } from "@/components/AppSwitcher";
@@ -18,11 +18,6 @@ import { api } from "@/lib/api";
 import { uiPrefs, useUIPrefs } from "@/lib/ui-prefs";
 
 export const Route = createFileRoute("/")({
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData({
-      queryKey: ["applications"],
-      queryFn: () => api.listApplications(),
-    }),
   head: () => ({
     meta: [
       { title: "Pulse · Multi-application analytics" },
@@ -46,7 +41,7 @@ export const Route = createFileRoute("/")({
 
 function DashboardPage() {
   const { theme, accentHue, currentAppId } = useUIPrefs();
-  const { data: apps } = useSuspenseQuery({
+  const { data: apps = [] } = useQuery({
     queryKey: ["applications"],
     queryFn: () => api.listApplications(),
   });
