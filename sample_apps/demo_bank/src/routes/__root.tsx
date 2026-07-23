@@ -92,7 +92,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         src: "/tracker.js",
         "data-site-id": "demo-bank",
-        "data-endpoint": "http://localhost:3000/collect",
+        "data-endpoint": "http://localhost:8000/collect",
       },
     ],
   }),

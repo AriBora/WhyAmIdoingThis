@@ -18,6 +18,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type ChartType, type QueryResult } from "@/lib/api";
 import { ChartRenderer } from "@/components/ChartRenderer";
 
+type AIPreview = Awaited<ReturnType<typeof api.customChart>>;
+
 const AI_EXAMPLES = [
     "Sessions per day, last 14 days",
     "Top 8 pages by page_view this week",
@@ -67,21 +69,45 @@ function AIBuilder({ appId, onDone }: { appId: string; onDone: () => void }) {
     const [prompt, setPrompt] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [preview, setPreview] = useState<AIPreview | null>(null);
 
-    async function submit() {
+    async function generatePreview() {
         const p = prompt.trim();
         if (!p) return;
         setLoading(true);
         setError(null);
         try {
-            await api.customChart(appId, p);
-            qc.invalidateQueries({ queryKey: ["tiles", appId] });
-            setPrompt("");
-            onDone();
+            setPreview(await api.customChart(appId, p));
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function addToDashboard() {
+        if (!preview || saving) return;
+        setSaving(true);
+        setError(null);
+        try {
+            await api.createTile(appId, {
+                title: preview.title,
+                chart_type: preview.chartType,
+                sql_query: preview.sql,
+                x_key: preview.xKey,
+                y_key: preview.yKey,
+                x: 0,
+                y: 9999,
+                w: 6,
+                h: 8,
+            });
+            qc.invalidateQueries({ queryKey: ["tiles", appId] });
+            onDone();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSaving(false);
         }
     }
 
@@ -93,14 +119,14 @@ function AIBuilder({ appId, onDone }: { appId: string; onDone: () => void }) {
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="e.g. Bar chart of top 10 pages by unique visitors, last 7 days"
                 rows={4}
-                disabled={loading}
+                disabled={loading || saving}
             />
             <div className="flex flex-wrap gap-1.5">
                 {AI_EXAMPLES.map((ex) => (
                     <button
                         key={ex}
                         onClick={() => setPrompt(ex)}
-                        disabled={loading}
+                        disabled={loading || saving}
                         className="text-[11px] px-2 py-1 rounded-md border border-border bg-surface-2 hover:border-primary/50 transition"
                     >
                         {ex}
@@ -109,10 +135,34 @@ function AIBuilder({ appId, onDone }: { appId: string; onDone: () => void }) {
             </div>
             {error && <div className="text-xs text-destructive">⚠️ {error}</div>}
             <DialogFooter>
-                <Button onClick={submit} disabled={loading || !prompt.trim()}>
+                <Button className="hidden" onClick={generatePreview} disabled={loading || !prompt.trim()}>
                     {loading ? "Generating…" : "Add to dashboard"}
                 </Button>
+                <Button variant="outline" onClick={generatePreview} disabled={loading || saving || !prompt.trim()}>
+                    {loading ? "Generating preview..." : "Generate preview"}
+                </Button>
+                <Button onClick={addToDashboard} disabled={!preview || loading || saving}>
+                    {saving ? "Adding..." : "Add to dashboard"}
+                </Button>
             </DialogFooter>
+            {preview && (
+                <div className="rounded-lg border border-border bg-surface-2 p-3">
+                    <div className="mb-2 text-xs font-semibold">Preview: {preview.title}</div>
+                    {preview.chartType === "bar" || preview.chartType === "line" || preview.chartType === "funnel" ? (
+                        <ChartRenderer
+                            type={preview.chartType}
+                            xKey={preview.xKey}
+                            yKey={preview.yKey}
+                            data={preview.data}
+                            height={220}
+                        />
+                    ) : (
+                        <div className="text-xs text-muted-foreground">
+                            {preview.data.length} row{preview.data.length === 1 ? "" : "s"} returned
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

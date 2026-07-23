@@ -167,7 +167,6 @@ export const api = {
         prompt: string,
     ) {
         return req<{
-            tile: Tile;
             title: string;
             chartType: ChartType;
             xKey: string;

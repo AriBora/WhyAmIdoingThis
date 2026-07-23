@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS dashboard_tiles (
     sql_query      TEXT,
     x_key          TEXT,
     y_key          TEXT,
+    color          INT,
+    refresh_seconds INT,
 
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()

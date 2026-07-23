@@ -2,7 +2,8 @@
 // never inside a generic `properties` JSON object.
 (function () {
   var script = document.currentScript;
-  var endpoint = (script && script.getAttribute("data-endpoint")) || "http://localhost:3000/collect";
+  var endpoint = (script && script.getAttribute("data-endpoint")) || "http://localhost:8000/collect";
+  var apiKey = script && script.getAttribute("data-api-key");
   var siteId = (script && script.getAttribute("data-site-id")) || "unknown";
   var visitorKey = "analytics_visitor_id";
   var sessionKey = "analytics_session_id";
@@ -27,7 +28,16 @@
       visitor_id: visitorId(), session_id: sessionId(), ts: Date.now()
     };
     Object.keys(payload).forEach(function (key) { if (payload[key] === undefined || payload[key] === null) delete payload[key]; });
-    try { navigator.sendBeacon ? navigator.sendBeacon(endpoint, new Blob([JSON.stringify(payload)], { type: "application/json" })) : fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), keepalive: true, mode: "no-cors" }).catch(function () {}); } catch (e) {}
+    try {
+      // sendBeacon cannot include the optional ingestion header.
+      if (apiKey) {
+        fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "X-Analytics-Key": apiKey }, body: JSON.stringify(payload), keepalive: true }).catch(function () {});
+      } else if (navigator.sendBeacon) {
+        navigator.sendBeacon(endpoint, new Blob([JSON.stringify(payload)], { type: "application/json" }));
+      } else {
+        fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), keepalive: true }).catch(function () {});
+      }
+    } catch (e) {}
   }
 
   window.analytics = {

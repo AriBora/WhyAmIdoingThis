@@ -1,7 +1,7 @@
 import json
 import os
-import random
 import re
+import uuid
 from typing import Any, Literal
 
 from dotenv import load_dotenv
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from db import (
     insert_event,
-    run_select,
+    run_select_for_site,
     get_tiles,
     upsert_tile,
     delete_tile,
@@ -29,10 +29,14 @@ from agents import run_chart_creation_agent, run_chat_analyst_agent
 
 app = FastAPI(title="Hackathon Analytics Backend")
 
+cors_origins = [origin.strip() for origin in os.environ.get(
+    "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+).split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -68,7 +72,10 @@ async def get_schema(site_id: str) -> JSONResponse:
 
 class CollectPayload(BaseModel):
     site_id: str
-    name: str
+    name: Literal[
+        "screen_view", "offering_click", "flow_step", "flow_abandoned",
+        "flow_completed", "watchlist_add", "watchlist_remove", "form_error", "button_click",
+    ]
     screen_name: str | None = None
     flow_name: str | None = None
     step_number: int | None = None
@@ -92,9 +99,17 @@ class FeedbackPayload(BaseModel):
     page_url: str | None = None
 
 
+MAX_COLLECT_BODY_BYTES = 16_384
+INGESTION_API_KEY = os.environ.get("INGESTION_API_KEY")
+
+
 @app.post("/collect", status_code=204)
 async def collect(request: Request) -> None:
     raw = await request.body()
+    if len(raw) > MAX_COLLECT_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Event payload exceeds 16 KB")
+    if INGESTION_API_KEY and request.headers.get("x-analytics-key") != INGESTION_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid analytics ingestion key")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -105,19 +120,24 @@ async def collect(request: Request) -> None:
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    await insert_event(
-        site_id=payload.site_id,
-        name=payload.name,
-        event=payload,
-        url=payload.url,
-        client_ts=payload.ts,
-    )
+    try:
+        await insert_event(
+            site_id=payload.site_id,
+            name=payload.name,
+            event=payload,
+            url=payload.url,
+            client_ts=payload.ts,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/feedback", status_code=204)
 async def collect_feedback(payload: FeedbackPayload) -> None:
     pool = await _pool_get()
     app_id: str = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", payload.site_id)
+    if app_id is None:
+        raise HTTPException(status_code=404, detail=f"No application found for site_id '{payload.site_id}'")
     await pool.execute(
         """
         INSERT INTO feedback (application_id, name, email, topic, message, page_url)
@@ -143,6 +163,8 @@ class TilePayload(BaseModel):
     sql_query: str | None = None
     x_key: str | None = None
     y_key: str | None = None
+    color: int | None = None
+    refresh_seconds: int | None = None
 
 
 class PatchTilePayload(BaseModel):
@@ -155,6 +177,8 @@ class PatchTilePayload(BaseModel):
     sql_query: str | None = None
     x_key: str | None = None
     y_key: str | None = None
+    color: int | None = None
+    refresh_seconds: int | None = None
 
 
 @app.get("/applications/{site_id}/tiles")
@@ -167,7 +191,7 @@ async def list_tiles(site_id: str) -> JSONResponse:
 async def create_tile(site_id: str, body: TilePayload) -> JSONResponse:
     tile_dict = body.model_dump()
     if not tile_dict.get("id"):
-        tile_dict["id"] = f"custom_{random.randint(100000, 999999)}"
+        tile_dict["id"] = f"custom_{uuid.uuid4()}"
     saved = await upsert_tile(site_id, tile_dict)
     return JSONResponse(jsonable_encoder(saved))
 
@@ -185,7 +209,7 @@ async def patch_tile(tile_id: str, body: PatchTilePayload) -> JSONResponse:
     pool = await _pool_get()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key FROM dashboard_tiles WHERE id = $1",
+            "SELECT application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key, color, refresh_seconds FROM dashboard_tiles WHERE id = $1",
             tile_id,
         )
         if not row:
@@ -227,7 +251,7 @@ class QueryRequest(BaseModel):
 @app.post("/applications/{site_id}/query")
 async def run_app_query(site_id: str, req: QueryRequest) -> JSONResponse:
     try:
-        rows, _ = await run_select(req.sql_query, [], 500)
+        rows, _ = await run_select_for_site(site_id, req.sql_query, [], 500)
         cols = list(rows[0].keys()) if rows else []
         return JSONResponse({"columns": cols, "rows": jsonable_encoder(rows)})
     except Exception as e:
@@ -241,7 +265,7 @@ async def run_app_query(site_id: str, req: QueryRequest) -> JSONResponse:
 @app.get("/applications/{site_id}/feedback")
 async def list_feedback(
     site_id: str,
-    limit: int = Query(50),
+    limit: int = Query(50, ge=1, le=200),
     topic: str | None = Query(None),
     search: str | None = Query(None),
 ) -> JSONResponse:
@@ -266,7 +290,7 @@ async def custom_chart(req: CustomChartRequest, site_id: str | None = None) -> J
         raise HTTPException(status_code=400, detail="Missing prompt")
     target_site_id = site_id or req.application_id or "demo-bank"
     result = await run_chart_creation_agent(target_site_id, prompt)
-    return JSONResponse(result)
+    return JSONResponse(content = jsonable_encoder(result))
 
 
 # ---------------------------------------------------------------------------

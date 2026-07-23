@@ -152,9 +152,20 @@ async def get_feedback(
 
     query += " ORDER BY received_at DESC"
 
-    rows = await pool.fetch(query, *params)
-    total = len(rows)
-    result = [dict(r) for r in rows[:limit]]
+    limit = max(1, min(limit, 200))
+    count_query = "SELECT COUNT(*) FROM feedback WHERE application_id = $1"
+    count_params: list[Any] = [app_id]
+    if topic:
+        count_params.append(topic)
+        count_query += f" AND topic = ${len(count_params)}"
+    if search:
+        count_params.append(f"%{search}%")
+        count_query += f" AND (name ILIKE ${len(count_params)} OR email ILIKE ${len(count_params)} OR message ILIKE ${len(count_params)})"
+
+    total = await pool.fetchval(count_query, *count_params) or 0
+    params.append(limit)
+    query += f" LIMIT ${len(params)}"
+    result = [dict(r) for r in await pool.fetch(query, *params)]
     for r in result:
         if r.get("created_at"):
             r["created_at"] = r["created_at"].isoformat()
@@ -173,7 +184,9 @@ async def insert_event(
     client_ts: int | None,
 ) -> None:
     pool = await _pool_get()
-    app_id: str = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", site_id)
+    app_id: str | None = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", site_id)
+    if app_id is None:
+        raise ValueError(f"No application found for site_id '{site_id}'")
 
     await pool.execute(
         """
@@ -295,7 +308,7 @@ async def get_tiles(site_id: str) -> list[dict[str, Any]]:
         """
         SELECT t.id, t.title,
                t.x, t.y, t.w, t.h,
-               t.chart_type, t.sql_query, t.x_key, t.y_key,
+               t.chart_type, t.sql_query, t.x_key, t.y_key, t.color, t.refresh_seconds,
                t.created_at, t.updated_at,
                a.site_id AS application_id
         FROM dashboard_tiles t
@@ -325,7 +338,7 @@ async def get_tiles(site_id: str) -> list[dict[str, Any]]:
             """
             SELECT t.id, t.title,
                    t.x, t.y, t.w, t.h,
-                   t.chart_type, t.sql_query, t.x_key, t.y_key,
+                   t.chart_type, t.sql_query, t.x_key, t.y_key, t.color, t.refresh_seconds,
                    t.created_at, t.updated_at,
                    a.site_id AS application_id
             FROM dashboard_tiles t
@@ -361,8 +374,8 @@ async def upsert_tile(site_id: str, tile: dict[str, Any]) -> dict[str, Any]:
     row = await pool.fetchrow(
         """
         INSERT INTO dashboard_tiles
-            (id, application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            (id, application_id, title, x, y, w, h, chart_type, sql_query, x_key, y_key, color, refresh_seconds)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id, application_id) DO UPDATE SET
             title      = EXCLUDED.title,
             x          = EXCLUDED.x,
@@ -373,8 +386,10 @@ async def upsert_tile(site_id: str, tile: dict[str, Any]) -> dict[str, Any]:
             sql_query  = EXCLUDED.sql_query,
             x_key      = EXCLUDED.x_key,
             y_key      = EXCLUDED.y_key,
+            color      = EXCLUDED.color,
+            refresh_seconds = EXCLUDED.refresh_seconds,
             updated_at = now()
-        RETURNING id, title, x, y, w, h, chart_type, sql_query, x_key, y_key, created_at, updated_at
+        RETURNING id, title, x, y, w, h, chart_type, sql_query, x_key, y_key, color, refresh_seconds, created_at, updated_at
         """,
         tile["id"],
         app_id,
@@ -387,6 +402,8 @@ async def upsert_tile(site_id: str, tile: dict[str, Any]) -> dict[str, Any]:
         tile.get("sql_query"),
         tile.get("x_key"),
         tile.get("y_key"),
+        tile.get("color"),
+        tile.get("refresh_seconds"),
     )
     return dict(row)
 
@@ -427,5 +444,31 @@ async def run_select(
     pool = await _pool_get()
     rows = await pool.fetch(stripped, *(params or []))
 
+    result = [dict(r) for r in rows]
+    return result[:row_limit], len(result)
+
+
+async def run_select_for_site(
+    site_id: str, sql: str, params: Sequence[Any] | None = None, row_limit: int = 500
+) -> tuple[list[dict[str, Any]], int]:
+    """Run an analytics query with PostgreSQL row-level app isolation enabled."""
+    pool = await _pool_get()
+    app_id = await pool.fetchval("SELECT id FROM applications WHERE site_id = $1", site_id)
+    if app_id is None:
+        raise ValueError(f"No application found for site_id '{site_id}'")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('analytics.application_id', $1, true)", str(app_id)
+            )
+            stripped = sql.strip().rstrip(";")
+            if not stripped:
+                raise ValueError("Empty SQL statement.")
+            if not re.match(r"^\s*(select|with)\b", stripped, re.IGNORECASE):
+                raise ValueError("Only SELECT/WITH statements are allowed.")
+            if _DISALLOWED_KEYWORDS.search(stripped) or ";" in stripped:
+                raise ValueError("Only one read-only SELECT/WITH statement is allowed.")
+            rows = await conn.fetch(stripped, *(params or []))
     result = [dict(r) for r in rows]
     return result[:row_limit], len(result)
