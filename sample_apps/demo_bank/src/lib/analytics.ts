@@ -76,11 +76,13 @@ export function identifyUser(userId: string | null) {
   }
 }
 
+import { API_BASE_URL } from "./config";
+
 /** Contact messages belong in the dedicated `feedback` table, not in events. */
 export function submitFeedback(feedback: { name: string; email: string; topic: string; message: string }) {
 
   if (typeof window === "undefined") return;
-  fetch("http://localhost:3000/feedback", {
+  fetch(`${API_BASE_URL}/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...feedback, page_url: window.location.pathname, site_id: "demo-bank" }),

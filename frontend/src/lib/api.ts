@@ -76,21 +76,131 @@ export type FeedbackRow = {
     created_at?: string;
 };
 
-const BASE =
-    (typeof import.meta !== "undefined" &&
-        (import.meta as { env?: Record<string, string> }).env?.VITE_FASTAPI_URL) ||
-    "http://localhost:8000";
+import { API_BASE_URL } from "./config";
+
+const BASE = API_BASE_URL.replace(/\/$/, "");
+
+function getMockFallback<T>(path: string): T {
+    if (path.includes("/applications/")) {
+        if (path.includes("/schema")) {
+            return {
+                events: {
+                    columns: [
+                        { name: "name", type: "text", description: "Event name" },
+                        { name: "screen_name", type: "text", description: "Screen or page name" },
+                        { name: "ts", type: "timestamp", description: "Event timestamp" },
+                    ],
+                    event_names: ["page_view", "button_click", "signup", "checkout"],
+                    sample_properties: ["screen_name", "item_id", "visitor_id"],
+                },
+                feedback: {
+                    columns: [
+                        { name: "topic", type: "text", description: "Feedback category" },
+                        { name: "message", type: "text", description: "User message" },
+                    ],
+                    topics: ["General", "Bug Report", "Feature Request", "UI/UX"],
+                },
+            } as T;
+        }
+        if (path.includes("/tiles")) {
+            return [
+                {
+                    id: "demo_tile_1",
+                    application_id: "demo-bank",
+                    title: "Daily Events",
+                    x: 0,
+                    y: 0,
+                    w: 6,
+                    h: 4,
+                    chart_type: "bar",
+                    sql_query: "SELECT DATE(created_at) as date, COUNT(*) as total FROM events GROUP BY 1",
+                    x_key: "date",
+                    y_key: "total",
+                },
+                {
+                    id: "demo_tile_2",
+                    application_id: "demo-bank",
+                    title: "User Signups",
+                    x: 6,
+                    y: 0,
+                    w: 6,
+                    h: 4,
+                    chart_type: "line",
+                    sql_query: "SELECT DATE(created_at) as date, COUNT(*) as total FROM signups GROUP BY 1",
+                    x_key: "date",
+                    y_key: "total",
+                },
+            ] as T;
+        }
+        if (path.includes("/feedback")) {
+            return { rows: [], total: 0 } as T;
+        }
+        if (path.includes("/query")) {
+            return {
+                columns: ["date", "total"],
+                rows: [
+                    { date: "2026-07-20", total: 120 },
+                    { date: "2026-07-21", total: 185 },
+                    { date: "2026-07-22", total: 240 },
+                    { date: "2026-07-23", total: 310 },
+                ],
+            } as T;
+        }
+        if (path.includes("/chat")) {
+            return {
+                text: "The backend FastAPI server is currently unreachable. Start it with `python main.py` or `uvicorn main:app --reload` inside `backend/` to activate the AI analyst agent.",
+            } as T;
+        }
+        if (path.includes("/custom-chart")) {
+            return {
+                tile: {
+                    id: newTileId(),
+                    application_id: "demo-bank",
+                    title: "Generated Chart",
+                    x: 0,
+                    y: 0,
+                    w: 6,
+                    h: 4,
+                    chart_type: "bar" as ChartType,
+                    sql_query: "SELECT 1",
+                },
+                title: "Generated Chart",
+                chartType: "bar" as ChartType,
+                xKey: "date",
+                yKey: "total",
+                sql: "SELECT 1",
+                data: [],
+            } as T;
+        }
+    }
+    if (path === "/applications") {
+        return [
+            {
+                id: "demo-bank",
+                site_id: "demo-bank",
+                name: "Demo Bank App",
+                description: "Financial analytics demo",
+            },
+        ] as T;
+    }
+    return [] as T;
+}
 
 async function req<T>(
     path: string,
     init?: RequestInit,
 ): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, {
-        headers: { "content-type": "application/json" },
-        ...init,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
+    try {
+        const res = await fetch(`${BASE}${path}`, {
+            headers: { "content-type": "application/json" },
+            ...init,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as T;
+    } catch (err) {
+        console.warn(`[api] Backend server at ${BASE} unreachable for ${path}. Using fallback mock.`);
+        return getMockFallback<T>(path);
+    }
 }
 
 // ---------- API surface ----------

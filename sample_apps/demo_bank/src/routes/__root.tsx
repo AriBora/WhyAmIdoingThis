@@ -9,6 +9,8 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { API_BASE_URL } from "../lib/config";
+
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -92,7 +94,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         src: "/tracker.js",
         "data-site-id": "demo-bank",
-        "data-endpoint": "http://localhost:3000/collect",
+        "data-endpoint": `${API_BASE_URL}/collect`,
       },
     ],
   }),

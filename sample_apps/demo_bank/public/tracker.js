@@ -2,7 +2,7 @@
 // never inside a generic `properties` JSON object.
 (function () {
   var script = document.currentScript;
-  var endpoint = (script && script.getAttribute("data-endpoint")) || "http://localhost:3000/collect";
+  var endpoint = (script && script.getAttribute("data-endpoint")) || "http://10.29.67.5:8000/collect";
   var siteId = (script && script.getAttribute("data-site-id")) || "unknown";
   var visitorKey = "analytics_visitor_id";
   var sessionKey = "analytics_session_id";
