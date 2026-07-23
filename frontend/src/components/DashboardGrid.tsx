@@ -14,22 +14,43 @@ function feedbackLayoutKey(appId: string) {
   return `feedback_tile_layout_${appId}`;
 }
 
-function saveFeedbackLayout(appId: string, item: { x: number; y: number; w: number; h: number }) {
+function saveFeedbackLayout(
+  appId: string,
+  item: { x: number; y: number; w: number; h: number },
+  currentCols: number = 12,
+) {
   try {
-    localStorage.setItem(feedbackLayoutKey(appId), JSON.stringify(item));
-  } catch { /* ignore */ }
+    // If it spans full width of the current column count and starts at 0, treat as default full-width (12 cols)
+    const isFullWidth = item.x === 0 && item.w >= currentCols;
+    const toSave = {
+      x: isFullWidth ? 0 : item.x,
+      y: item.y,
+      w: isFullWidth ? 12 : item.w,
+      h: item.h,
+      isCustomized: !isFullWidth,
+    };
+    localStorage.setItem(feedbackLayoutKey(appId), JSON.stringify(toSave));
+  } catch {
+    /* ignore */
+  }
 }
 
 function loadFeedbackLayout(appId: string): { x: number; y: number; w: number; h: number } | null {
   try {
     const raw = localStorage.getItem(feedbackLayoutKey(appId));
-    return raw ? (JSON.parse(raw) as { x: number; y: number; w: number; h: number }) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { x: number; y: number; w: number; h: number; isCustomized?: boolean };
+    // Default to max width (12 columns) unless explicitly customized by the user
+    if (!parsed.isCustomized) {
+      return { ...parsed, x: 0, w: 12 };
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
-function synthesizeFeedbackTile(appId: string): Tile {
+function synthesizeFeedbackTile(appId: string, bottomY: number): Tile {
   const saved = loadFeedbackLayout(appId);
   return {
     id: `feedback_${appId}`,
@@ -38,8 +59,8 @@ function synthesizeFeedbackTile(appId: string): Tile {
     chart_type: "table",
     sql_query: FEEDBACK_SENTINEL,
     x: saved?.x ?? 0,
-    y: saved?.y ?? 0,
-    w: saved?.w ?? 12,
+    y: bottomY, // always below all other tiles
+    w: saved?.w ?? 12, // maximum width by default
     h: saved?.h ?? 10,
     color: 265,
     refresh_seconds: 120,
@@ -57,10 +78,13 @@ export function DashboardGrid({ appId }: { appId: string }) {
   const { width, containerRef, mounted } = useContainerWidth();
 
   const effectiveTiles: Tile[] = useMemo(() => {
-    // Always show the feedback tile by default; the backend may already
+    // Always show the feedback tile at the end; the backend may already
     // return one, in which case we don't duplicate.
     const hasFeedback = tiles.some((t) => t.sql_query === FEEDBACK_SENTINEL);
-    return hasFeedback ? tiles : [synthesizeFeedbackTile(appId), ...tiles];
+    if (hasFeedback) return tiles;
+    // Compute the bottom edge of all real tiles so feedback always sits below them.
+    const bottomY = tiles.reduce((max, t) => Math.max(max, t.y + t.h), 0);
+    return [...tiles, synthesizeFeedbackTile(appId, bottomY)];
   }, [tiles, appId]);
 
   const layout: LayoutItem[] = useMemo(
@@ -94,9 +118,18 @@ export function DashboardGrid({ appId }: { appId: string }) {
   function onLayoutChange(items: readonly LayoutItem[]) {
     const snapshot = items.map((l) => ({ ...l }));
 
+    // Determine current grid column count based on width breakpoint
+    const currentCols = width >= 1200 ? 12 : width >= 768 ? 8 : 4;
+
     // Persist feedback tile position locally (it has no backend row).
     const fbItem = snapshot.find((l) => l.i.startsWith("feedback_"));
-    if (fbItem) saveFeedbackLayout(appId, { x: fbItem.x, y: fbItem.y, w: fbItem.w, h: fbItem.h });
+    if (fbItem) {
+      saveFeedbackLayout(
+        appId,
+        { x: fbItem.x, y: fbItem.y, w: fbItem.w, h: fbItem.h },
+        currentCols,
+      );
+    }
 
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
     pendingSave.current = window.setTimeout(() => persistLayout.mutate(snapshot), 400);
