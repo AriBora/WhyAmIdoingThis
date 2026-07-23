@@ -41,3 +41,7 @@ Similiar to frontend dashboard
 7. When new chart gets added, it should write in the database.
 8. Test the question answering agent, whether it can perform sql query and answer or not. 
 9. The '10' problem.
+
+
+## Possible use case that could be shown
+1. Dont include any Rate of Interest in the landing page. Ask the chatbot what the Rate of Interest is. Show in the UI improvements that this should be included.
