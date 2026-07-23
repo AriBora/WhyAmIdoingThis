@@ -23,8 +23,8 @@ Similiar to frontend dashboard
 2. <code>python -m venv .venv</code>
 3. <code>.\.venv\Scripts\activate</code>
 4. <code>pip install -r requirements.txt</code>
-5. <code>uvicorn main:app --host 0.0.0.0 --port 8080</code>
-6. Test it by visiting 127.0.0.1:8080/docs on browser.
+5. <code>uvicorn main:app --host 0.0.0.0 --port 8000</code>
+6. Test it by visiting 127.0.0.1:8000/docs on browser.
 
 ### Database
 1. <code>docker compose up -d</code>
@@ -41,3 +41,7 @@ Similiar to frontend dashboard
 7. When new chart gets added, it should write in the database.
 8. Test the question answering agent, whether it can perform sql query and answer or not. 
 9. The '10' problem.
+
+
+## Possible use case that could be shown
+1. Dont include any Rate of Interest in the landing page. Ask the chatbot what the Rate of Interest is. Show in the UI improvements that this should be included.

@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment – never copy into the image
+.venv/
+venv/
+env/
+
+# Local environment files – secrets must NOT be baked into the image
+.env
+.env.*
+
+# Git & editor
+.git/
+.gitignore
+*.md
+
+# IDE / OS
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db

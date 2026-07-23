@@ -17,6 +17,7 @@ backend/.venv
 frontend/node_modules
 frontend/dist
 frontend/dist-ssr
+frontend/package-lock.json
 frontend/.output
 frontend/.vinxi
 frontend/.tanstack
@@ -26,6 +27,7 @@ frontend/*.local
 sample_apps/demo_bank/node_modules
 sample_apps/demo_bank/dist
 sample_apps/demo_bank/dist-ssr
+sample_apps/demo_bank/package-lock.json
 sample_apps/demo_bank/.output
 sample_apps/demo_bank/.vinxi
 sample_apps/demo_bank/.tanstack
@@ -40,6 +42,7 @@ sample_apps/demo-trade/.vinxi
 sample_apps/demo-trade/.tanstack
 sample_apps/demo-trade/.nitro
 sample_apps/demo-trade/*.local
+old/
 
 # Wrangler / Cloudflare
 .wrangler/
