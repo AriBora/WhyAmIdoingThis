@@ -33,10 +33,11 @@ Similiar to frontend dashboard
 
 ## Tasks to do
 1. Make it work
-2. Finalise the database schema. Current tables: application, dashboard tiles, events, feedback. What should be the columns of the events ?
-3. Modify the track function of the sample demo-bank app according to the events table schema.
-4. Test the workflow: event triggered in sample demo-bank app gets written in the database via the backend.
+2. Finalise the database schema. Current tables: application, dashboard tiles, events, feedback. What should be the columns of the events ? - Done
+3. Modify the track function of the sample demo-bank app according to the events table schema. - Done
+4. Test the workflow: event triggered in sample demo-bank app gets written in the database via the backend. - Done
 5. test the new chart creation both manually and via the google-adk agent.
 6. Make necessary UI changes for the chart creation process.
 7. When new chart gets added, it should write in the database.
 8. Test the question answering agent, whether it can perform sql query and answer or not. 
+9. The '10' problem.
