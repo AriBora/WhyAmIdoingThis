@@ -1,4 +1,6 @@
 .env*
+!.env.example
+!**/.env.example
 
 # Logs
 logs
@@ -32,6 +34,14 @@ sample_apps/demo_bank/.tanstack
 sample_apps/demo_bank/.nitro
 sample_apps/demo_bank/*.local
 
+sample_apps/demo-trade/node_modules
+sample_apps/demo-trade/dist
+sample_apps/demo-trade/dist-ssr
+sample_apps/demo-trade/.output
+sample_apps/demo-trade/.vinxi
+sample_apps/demo-trade/.tanstack
+sample_apps/demo-trade/.nitro
+sample_apps/demo-trade/*.local
 old/
 
 # Wrangler / Cloudflare
